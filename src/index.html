@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>词镜 WordLens</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- 自绘标题栏（右上角窗口控制按钮） -->
+  <header class="titlebar">
+    <div class="titlebar-title" id="titlebar-title">词镜 WordLens</div>
+    <div class="win-controls">
+      <button class="win-btn" id="win-min" title="最小化" aria-label="最小化">
+        <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="win-btn" id="win-max" title="最大化" aria-label="最大化">
+        <svg viewBox="0 0 10 10" width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="win-btn win-close" id="win-close" title="关闭" aria-label="关闭">
+        <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1.1"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H12a6 6 0 0 1 6 6v.5a4.5 4.5 0 0 1-4.5 4.5H12l-4 4v-4H5.5A1.5 1.5 0 0 1 4 13.5v-8Z"/></svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">词镜</span>
+          <span class="brand-sub">WordLens</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="reader">
+          <svg viewBox="0 0 24 24"><path d="M4 4h6a3 3 0 0 1 3 3v11a2.5 2.5 0 0 0-2.5-2.5H4V4Zm12 0h4v11.5A2.5 2.5 0 0 0 17.5 18a3 3 0 0 1-3 3V4Z"/></svg>
+          <span>阅读器</span>
+        </button>
+        <button class="nav-item" data-view="wordbook">
+          <svg viewBox="0 0 24 24"><path d="M12 4a4 4 0 0 1 4 4v9.5a2.5 2.5 0 0 0-2.5-2.5H6v-9a2 2 0 0 1 2-2h4Zm0 0v13m-2-11h4m-4 4h3"/></svg>
+          <span>单词本</span>
+          <span class="nav-badge" id="wb-count">0</span>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <svg viewBox="0 0 24 24"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm9 3a9 9 0 0 0-.2-1.9l-2-1.6.6-2.4-1.7-1.7-2.4.6-1.6-2A9 9 0 0 0 12 3a9 9 0 0 0-1.9.2l-1.6 2-2.4-.6-1.7 1.7.6 2.4-2 1.6A9 9 0 0 0 3 12c0 .65.07 1.29.2 1.9l2 1.6-.6 2.4 1.7 1.7 2.4-.6 1.6 2c.6.13 1.25.2 1.9.2s1.3-.07 1.9-.2l1.6-2 2.4.6 1.7-1.7-.6-2.4 2-1.6c.13-.6.2-1.25.2-1.9Z"/></svg>
+          <span>设置</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="tip-box">
+          <span class="tip-icon">⌘</span>
+          <p>导入一篇英文文章，点击任意单词即可查看释义，一键收录进单词本。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容 -->
+    <main class="content">
+      <!-- 阅读器视图 -->
+      <section class="view" id="view-reader">
+        <div class="reader-toolbar">
+          <button class="btn btn-primary" id="btn-import">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            导入文章
+          </button>
+          <button class="btn btn-ghost" id="btn-codex">
+            <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 2a7 7 0 1 1 0 14 7 7 0 0 1 0-14Z"/><path d="M12 7v5l3 2"/></svg>
+            从 Codex 导入
+          </button>
+          <div class="reader-meta" id="reader-meta"></div>
+        </div>
+
+        <!-- Codex 新文章同步提示条 -->
+        <div class="codex-sync hidden" id="codex-sync"></div>
+
+        <div class="reader-body">
+          <div id="reader-empty" class="empty-state">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" width="40" height="40"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H12a6 6 0 0 1 6 6v.5a4.5 4.5 0 0 1-4.5 4.5H12l-4 4v-4H5.5A1.5 1.5 0 0 1 4 13.5v-8Z"/></svg>
+            </div>
+            <h2>开始你的英语精读</h2>
+            <p>导入一篇英文文章（.txt / .md / .html），<br/>阅读时点击不认识的单词，词镜会立刻给你释义。</p>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-primary" id="btn-import-2">导入文章</button>
+              <button class="btn btn-ghost" id="btn-demo">载入示例文章</button>
+            </div>
+            <div class="empty-hint">
+              <span>支持从 Codex 目录直接选取 · 点词即查 · 一键生成单词本</span>
+            </div>
+          </div>
+
+          <article id="reader-article" class="article hidden"></article>
+        </div>
+      </section>
+
+      <!-- 单词本视图 -->
+      <section class="view hidden" id="view-wordbook">
+        <div class="wb-header">
+          <div class="wb-title">
+            <h2>我的单词本</h2>
+            <span class="wb-sub" id="wb-sub"></span>
+          </div>
+          <div class="wb-actions">
+            <button class="btn btn-ghost" id="btn-export">
+              <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              导出
+            </button>
+            <button class="btn btn-ghost btn-danger" id="btn-clear">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-.8 12a2 2 0 0 1-2 1.9H8.8a2 2 0 0 1-2-1.9L6 7"/></svg>
+              清空
+            </button>
+          </div>
+        </div>
+
+        <div class="wb-toolbar">
+          <input type="search" id="wb-search" class="search-input" placeholder="搜索单词或释义…" />
+          <div class="seg" id="wb-filter">
+            <button class="seg-item active" data-f="all">全部</button>
+            <button class="seg-item" data-f="starred">已收藏</button>
+          </div>
+        </div>
+
+        <div class="wb-list" id="wb-list"></div>
+        <div id="wb-empty" class="empty-state hidden">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" width="40" height="40"><path d="M12 4a4 4 0 0 1 4 4v9.5a2.5 2.5 0 0 0-2.5-2.5H6v-9a2 2 0 0 1 2-2h4Z"/></svg>
+          </div>
+          <h2>还没有单词</h2>
+          <p>回到阅读器，点击你遇到的生词并收录，就会出现在这里。</p>
+        </div>
+      </section>
+
+      <!-- 设置视图 -->
+      <section class="view hidden" id="view-settings">
+        <div class="settings-wrap">
+          <h2 class="settings-title">设置</h2>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>外观</h3>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name">主题</span>
+                <span class="setting-desc">切换浅色 / 深色外观</span>
+              </div>
+              <div class="seg" id="theme-seg">
+                <button class="seg-item active" data-theme="light">浅色</button>
+                <button class="seg-item" data-theme="dark">深色</button>
+                <button class="seg-item" data-theme="auto">跟随系统</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>AI 释义增强 <span class="badge-opt">可选</span></h3>
+              <p class="card-desc">启用后，点词会在在线词典之外，额外调用大模型生成更贴合语境的释义、例句与记忆技巧。</p>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name">AI 数据源</span>
+                <span class="setting-desc">Codex 使用本机 CLI，无需 API Key</span>
+              </div>
+              <div class="seg" id="ai-provider-seg">
+                <button class="seg-item active" data-p="openai">OpenAI API</button>
+                <button class="seg-item" data-p="codex">本机 Codex</button>
+              </div>
+            </div>
+            <div class="codex-status hidden" id="codex-status"></div>
+            <div class="setting-row" id="llm-key-row">
+              <div class="setting-label">
+                <span class="setting-name">启用 AI 释义</span>
+                <span class="setting-desc" id="ai-enable-desc">需要 OpenAI 兼容接口的 API Key</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="llm-enabled" />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+            <div class="field" id="llm-base-field">
+              <label>API Base URL</label>
+              <input type="text" id="llm-base" class="text-input" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div class="field" id="llm-model-field">
+              <label>模型</label>
+              <input type="text" id="llm-model" class="text-input" placeholder="gpt-4o-mini" />
+            </div>
+            <div class="field" id="llm-key-field">
+              <label>API Key</label>
+              <input type="password" id="llm-key" class="text-input" placeholder="sk-…" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Codex 目录</h3>
+              <p class="card-desc">从 Codex 工作目录直接扫描英文文章。</p>
+            </div>
+            <div class="field">
+              <label>Codex 目录路径</label>
+              <div class="path-row">
+                <input type="text" id="codex-dir" class="text-input" placeholder="自动检测 Documents\Codex" />
+                <button class="btn btn-ghost" id="btn-browse-codex">浏览</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="about">
+            <span>词镜 WordLens · v1.4.0</span>
+            <span>点词即查 · 生词成册 · Apple 风格</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 点词气泡 -->
+  <div class="popover hidden" id="popover">
+    <div class="pop-card">
+      <div class="pop-loading" id="pop-loading">
+        <div class="spinner"></div>
+        <span>查询中…</span>
+      </div>
+      <div class="pop-content" id="pop-content"></div>
+    </div>
+  </div>
+
+  <!-- Codex 文件选择弹层 -->
+  <div class="modal-mask hidden" id="codex-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>从 Codex 导入</h3>
+        <button class="modal-close" id="codex-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-path" id="codex-modal-path"></div>
+        <div class="modal-list" id="codex-modal-list"></div>
+        <div class="modal-empty hidden" id="codex-modal-empty">该目录下没有找到可导入的文本文件。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast hidden" id="toast"></div>
+
+  <!-- 拖拽导入遮罩 -->
+  <div class="drop-overlay hidden" id="drop-overlay">
+    <div class="drop-hint">
+      <div class="drop-icon">⤓</div>
+      <div class="drop-title">松开以导入英文文章</div>
+      <div class="drop-sub">支持 .txt / .md / .html · 可一次拖入多篇</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

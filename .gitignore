@@ -1,0 +1,14 @@
+# 依赖
+node_modules/
+
+# electron-builder 打包输出
+release/
+release*/
+
+# 词典原始数据（体积大，运行不需要；需重新生成词典时自行下载 ECDICT）
+ecdict_full.csv
+
+# 测试截图与临时文件
+wl_buttons.png
+*.log
+.DS_Store

@@ -1,0 +1,55 @@
+{
+  "name": "wordlens",
+  "productName": "词镜 WordLens",
+  "version": "1.4.0",
+  "description": "苹果风格英语单词学习桌面应用：导入 Codex 英文文本，点词即查，一键生成单词本",
+  "main": "main.js",
+  "author": "WordLens",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.wordlens.app",
+    "productName": "词镜 WordLens",
+    "directories": {
+      "output": "release9"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "WordLens-${version}-portable.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "artifactName": "WordLens-Setup-${version}.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  }
+}
