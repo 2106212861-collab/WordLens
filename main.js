@@ -302,7 +302,10 @@ function registerIpc() {
   ipcMain.handle('codex:lookup', async (_e, word, context) => codexLookup(word, context));
 
   // Codex CLI 检测状态（供设置页显示）
-  ipcMain.handle('codex:status', () => ({ available: !!codexPath, version: codexVersion }));
+  ipcMain.handle('codex:status', async () => {
+    await ensureCodexDetected();   // 等探测完成，避免启动时序拿到 available:false
+    return { available: !!codexPath, version: codexVersion };
+  });
 
   // 导出单词本
   ipcMain.handle('wordbook:export', async (_e, { content, format, defaultName }) => {
@@ -360,6 +363,13 @@ async function detectCodex() {
     } catch {}
   }
   console.log('[codex] not detected');
+}
+
+// 缓存探测 Promise：确保 codex:status 等探测完成后再返回，避免启动时序拿到 available:false
+let codexDetectPromise = null;
+function ensureCodexDetected() {
+  if (!codexDetectPromise) codexDetectPromise = detectCodex();
+  return codexDetectPromise;
 }
 
 const CODEX_DICT_SYSTEM = 'You are an English-Chinese dictionary assistant. Explain the given English word in simple Chinese, considering the context sentence if provided. Output ONLY a JSON object with keys "word","phonetic","meaning","example","example_cn","tip", where meaning is part of speech + Chinese meanings separated by semicolons, example is one English example sentence, example_cn is its Chinese translation, tip is one memory tip in Chinese. No other text.';
@@ -447,7 +457,7 @@ async function startCodexWatch() {
 app.whenReady().then(() => {
   registerIpc();
   loadDict();          // 异步加载离线词典，不阻塞窗口
-  detectCodex();       // 异步探测本机 Codex CLI
+  ensureCodexDetected();  // 异步探测本机 Codex CLI（缓存 Promise，codex:status 复用它）
   createWindow();
   startCodexWatch();   // 定时扫描 Codex 目录，新文章自动推送
   app.on('activate', () => {

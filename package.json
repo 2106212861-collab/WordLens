@@ -1,7 +1,7 @@
 {
   "name": "wordlens",
   "productName": "词镜 WordLens",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "苹果风格英语单词学习桌面应用：导入 Codex 英文文本，点词即查，一键生成单词本",
   "main": "main.js",
   "author": "WordLens",
@@ -15,7 +15,7 @@
     "appId": "com.wordlens.app",
     "productName": "词镜 WordLens",
     "directories": {
-      "output": "release9"
+      "output": "release10"
     },
     "files": [
       "main.js",

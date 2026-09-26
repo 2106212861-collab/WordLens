@@ -13,7 +13,8 @@ const state = {
   currentText: '',
   wordbook: [],           // 单词本条目
   theme: 'light',
-  llm: { enabled: false, provider: 'codex', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
+  llm: { enabled: true, provider: 'codex', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
+  codexAvailable: false,  // 本机是否检测到 Codex CLI
   codexDir: '',
   codexNew: [],           // Codex 自动同步的新文章列表
   filter: 'all',
@@ -463,7 +464,7 @@ function positionPopover(pop, rect) {
 }
 
 // ---------- 三级数据源：离线词典（主力）→ 在线增强 → AI ----------
-let popoverData = { word: null, offline: null, online: null, audioUrl: null };
+let popoverData = { word: null, offline: null, online: null, audioUrl: null, llm: null, llmPending: null };
 
 async function lookupWord(word, context) {
   // 离线词典可能仍在异步加载，未就绪时短暂重试（最多约 2s）
@@ -475,14 +476,14 @@ async function lookupWord(word, context) {
     }
   }
   const onlineP = api.dictionaryLookup(word);   // 内部已容错，失败返回 found:false
-  const useCodex = state.llm.enabled && state.llm.provider === 'codex';
+  const useCodex = state.llm.enabled && state.llm.provider === 'codex' && state.codexAvailable;
   const useOpenAI = state.llm.enabled && state.llm.provider === 'openai' && state.llm.apiKey;
   const llmP = useCodex ? api.codexLookup(word, context)
     : useOpenAI ? api.llmLookup(word, context, state.llm) : null;
 
   // 离线秒回，先渲染主内容
   if (currentWord !== word) return;
-  popoverData = { word, offline, online: null, audioUrl: null };
+  popoverData = { word, offline, online: null, audioUrl: null, llm: null, llmPending: llmP || null };
   renderPopover(word, offline);
 
   const stillOpen = () => currentWord === word && !$('#popover').classList.contains('hidden');
@@ -490,7 +491,11 @@ async function lookupWord(word, context) {
   // 在线 / AI 增量补渲染（气泡还开着且还是同一个词才更新）
   onlineP.then(online => { if (stillOpen()) updatePopoverOnline(word, online); });
   if (llmP) {
-    llmP.then(llm => { if (stillOpen()) updatePopoverAI(word, llm); });
+    llmP.then(llm => {
+      popoverData.llmPending = null;            // 查询结束（无论成败）
+      if (llm && llm.ok && llm.data) popoverData.llm = llm.data;
+      if (stillOpen()) updatePopoverAI(word, llm);
+    });
   }
 }
 
@@ -570,13 +575,20 @@ function renderPopover(word, offline) {
     else speechTTS(word);
   });
   $('#pop-tts').addEventListener('click', () => speechTTS(word));
-  $('#pop-add').addEventListener('click', () => {
+  $('#pop-add').addEventListener('click', async () => {
     if (inBook) { toast(`「${word}」已在单词本`); return; }
-    addToWordbookFromPopover(word);
+    const addBtn = $('#pop-add');
+    // 若 Codex 仍在翻译，等它返回后再收录，确保单词本用 Codex 释义
+    if (popoverData.llmPending) {
+      if (addBtn) { addBtn.disabled = true; addBtn.textContent = '… Codex 翻译中'; }
+      const res = await popoverData.llmPending;
+      if (currentWord !== word) return;                 // 等待期间气泡已关闭/切词，放弃
+      if (res && res.ok && res.data) popoverData.llm = res.data;
+    }
+    await addToWordbookFromPopover(word);
     toast(`已收录「${word}」`);
     markKnown(word);
-    const addBtn = $('#pop-add');
-    if (addBtn) { addBtn.textContent = '✓ 已在单词本'; addBtn.className = 'btn btn-ghost'; }
+    if (addBtn) { addBtn.disabled = false; addBtn.textContent = '✓ 已在单词本'; addBtn.className = 'btn btn-ghost'; }
   });
 }
 
@@ -700,22 +712,42 @@ window.addEventListener('resize', () => {
 });
 
 // ============ 单词本 ============
-function addToWordbookFromPopover(word) {
+async function addToWordbookFromPopover(word) {
   const off = popoverData.offline;
   const on = popoverData.online;
-  const llmData = popoverData.llm || null;
 
-  let phonetic = (off && off.found && off.data.phonetic) || '';
+  // 若 Codex/AI 释义仍在查询，等它返回（用户要求：单词本以 Codex 翻译为准）
+  let llmData = popoverData.llm || null;
+  if (!llmData && popoverData.llmPending) {
+    const res = await popoverData.llmPending;
+    if (res && res.ok && res.data) {
+      llmData = res.data;
+      popoverData.llm = res.data;
+    }
+  }
+
+  // 释义优先级：Codex/AI > 离线词典（没有 Codex 或 Codex 失败时回退离线）
+  let phonetic = '';
   let meaning = '';
-  if (off && off.found && off.data.translation) {
+  let example = '';
+
+  if (llmData) {
+    phonetic = llmData.phonetic || '';
+    meaning = llmData.meaning || '';
+    example = llmData.example || '';
+  }
+
+  // 离线兜底
+  if (!meaning && off && off.found && off.data.translation) {
     meaning = off.data.translation.split(' | ')
       .map(s => s.trim()).filter(Boolean)
       .filter(s => !s.startsWith('[网络]'))
       .join('；');
   }
+  if (!phonetic && off && off.found && off.data.phonetic) phonetic = off.data.phonetic;
 
-  let example = '';
-  if (on && on.found && Array.isArray(on.data) && on.data[0]) {
+  // 例句兜底（在线词典）
+  if (!example && on && on.found && Array.isArray(on.data) && on.data[0]) {
     const d = on.data[0];
     if (!phonetic && d.phonetic) phonetic = d.phonetic;
     outer:
@@ -724,11 +756,6 @@ function addToWordbookFromPopover(word) {
         if (def.example) { example = def.example; break outer; }
       }
     }
-  }
-  if (llmData) {
-    if (llmData.meaning) meaning = meaning ? meaning + '；' + llmData.meaning : llmData.meaning;
-    if (llmData.example) example = llmData.example;
-    if (llmData.phonetic && !phonetic) phonetic = llmData.phonetic;
   }
 
   // 从释义首行提取词性（"n. 通路…" → "n."）
@@ -981,14 +1008,23 @@ async function refreshCodexStatus() {
   if (!el) return;
   try {
     const st = await api.codexStatus();
+    state.codexAvailable = !!st.available;
     if (st.available) {
-      el.textContent = `✓ 已检测到本机 Codex CLI（v${st.version}），点词释义将由 Codex 提供`;
+      // 有 Codex → 自动启用 Codex 释义（除非用户已手动关闭）
+      if (state.llm.provider === 'codex' && !state.llm.enabled) {
+        state.llm.enabled = true;
+        const ck = $('#llm-enabled');
+        if (ck) ck.checked = true;
+        saveConfig();
+      }
+      el.textContent = `✓ 已检测到本机 Codex CLI（v${st.version}），单词释义将由 Codex 提供`;
       el.className = 'codex-status ok';
     } else {
-      el.textContent = '✗ 未检测到本机 Codex CLI，请安装 OpenAI Codex 后重试';
+      el.textContent = '✗ 未检测到本机 Codex CLI，将使用内置离线词典';
       el.className = 'codex-status bad';
     }
   } catch {
+    state.codexAvailable = false;
     el.textContent = 'Codex CLI 状态检测失败';
     el.className = 'codex-status bad';
   }
