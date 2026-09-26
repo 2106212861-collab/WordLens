@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('wordlens', {
   offlineLookup: (word) => ipcRenderer.invoke('dict:offline', word),
   dictionaryLookup: (word) => ipcRenderer.invoke('dictionary:lookup', word),
   llmLookup: (word, context, config) => ipcRenderer.invoke('llm:lookup', word, context, config),
+  llmLookupBatch: (words, config) => ipcRenderer.invoke('llm:lookupBatch', words, config),
   // 本机 Codex CLI
   codexLookup: (word, context) => ipcRenderer.invoke('codex:lookup', word, context),
   codexStatus: () => ipcRenderer.invoke('codex:status'),

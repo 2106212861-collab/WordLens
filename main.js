@@ -226,6 +226,44 @@ async function lookupLLM(word, context, config) {
   }
 }
 
+// ---------- 模型批量释义（OpenAI 兼容接口，一次多个词，供后台预翻译） ----------
+async function lookupLLMBatch(words, config) {
+  const base = (config.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const model = config.model || 'gpt-4o-mini';
+  const key = config.apiKey;
+  if (!key) throw new Error('未配置 API Key');
+  if (!Array.isArray(words) || words.length === 0) return [];
+
+  const system = '你是英汉词典助手。对给定的每个英文单词，给出简洁中文释义。只输出 JSON 数组，每个元素格式 {"word":"单词","meaning":"词性+中文释义（多个义项用分号）"}。只输出 JSON 数组，不要其他任何文字。';
+  const res = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `单词列表：${words.join(', ')}` }
+      ]
+    }),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`模型接口返回 ${res.status} ${errText.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  // 解析 JSON 数组（容忍 ```json 包裹等）
+  const m = content.match(/\[[\s\S]*\]/);
+  if (!m) throw new Error('未能解析批量释义结果');
+  const arr = JSON.parse(m[0]);
+  return Array.isArray(arr) ? arr : [];
+}
+
 // ---------- IPC 注册 ----------
 function registerIpc() {
   // 窗口控制
@@ -292,6 +330,16 @@ function registerIpc() {
   ipcMain.handle('llm:lookup', async (_e, word, context, config) => {
     try {
       const data = await lookupLLM(word, context, config || {});
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
+
+  // 模型批量释义（后台预翻译用，一次多个词）
+  ipcMain.handle('llm:lookupBatch', async (_e, words, config) => {
+    try {
+      const data = await lookupLLMBatch(words, config || {});
       return { ok: true, data };
     } catch (err) {
       return { ok: false, error: String(err.message || err) };

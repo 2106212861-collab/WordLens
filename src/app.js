@@ -223,6 +223,9 @@ function loadArticle(text, name, path) {
 
   article.scrollTop = 0;
   $('#reader-body') && ($('#reader-body').scrollTop = 0);
+
+  // 触发后台预翻译：文章导入后自动翻译生词，点词秒出
+  startBackgroundTranslation(text);
 }
 
 // ============ 文章渲染 ============
@@ -463,6 +466,78 @@ function positionPopover(pop, rect) {
   pop.style.top = top + 'px';
 }
 
+// ============ 后台预翻译（导入文章后自动翻译生词，点词秒出） ============
+const bgTranslate = {
+  running: false,
+  total: 0,
+  done: 0,
+  cache: new Map()   // word(lowercase) -> { word, meaning, ... }
+};
+
+// 提取文章里所有英文单词（去重、小写）
+function extractArticleWords(text) {
+  const words = text.match(/[A-Za-z]+(?:['’][A-Za-z]+)?/g) || [];
+  const set = new Set();
+  for (const w of words) {
+    const lw = w.toLowerCase();
+    if (lw.length > 1) set.add(lw);
+  }
+  return Array.from(set);
+}
+
+// 后台预翻译：只翻译离线词典查不到的生词（常见词离线秒回，不浪费 AI）
+async function startBackgroundTranslation(text) {
+  const useAI = state.llm.enabled && state.llm.provider === 'openai' && state.llm.apiKey;
+  bgTranslate.running = false;   // 终止上一轮
+  bgTranslate.cache.clear();
+  if (!useAI || !text) { renderBgProgress(); return; }
+
+  const words = extractArticleWords(text);
+  if (words.length === 0) { renderBgProgress(); return; }
+
+  // 过滤生词（离线词典查不到的）
+  const unknowns = [];
+  for (const w of words) {
+    const off = await api.offlineLookup(w);
+    if (!off || !off.found) unknowns.push(w);
+  }
+  if (unknowns.length === 0) { renderBgProgress(); return; }
+
+  bgTranslate.running = true;
+  bgTranslate.total = unknowns.length;
+  bgTranslate.done = 0;
+  renderBgProgress();
+
+  // 分批翻译（每次 10 词，串行，避免触发免费模型的并发限制）
+  const BATCH = 10;
+  for (let i = 0; i < unknowns.length && bgTranslate.running; i += BATCH) {
+    const batch = unknowns.slice(i, i + BATCH);
+    try {
+      const res = await api.llmLookupBatch(batch, state.llm);
+      if (res && res.ok && Array.isArray(res.data)) {
+        for (const item of res.data) {
+          if (item && item.word) bgTranslate.cache.set(String(item.word).toLowerCase(), item);
+        }
+      }
+    } catch {}
+    bgTranslate.done = Math.min(i + BATCH, unknowns.length);
+    renderBgProgress();
+  }
+  bgTranslate.running = false;
+  renderBgProgress();
+}
+
+function renderBgProgress() {
+  const el = $('#bg-translate');
+  if (!el) return;
+  if (bgTranslate.running && bgTranslate.total > 0) {
+    el.classList.remove('hidden');
+    el.textContent = `后台翻译中 ${bgTranslate.done}/${bgTranslate.total}…`;
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
 // ---------- 三级数据源：离线词典（主力）→ 在线增强 → AI ----------
 let popoverData = { word: null, offline: null, online: null, audioUrl: null, llm: null, llmPending: null };
 
@@ -478,8 +553,16 @@ async function lookupWord(word, context) {
   const onlineP = api.dictionaryLookup(word);   // 内部已容错，失败返回 found:false
   const useCodex = state.llm.enabled && state.llm.provider === 'codex' && state.codexAvailable;
   const useOpenAI = state.llm.enabled && state.llm.provider === 'openai' && state.llm.apiKey;
-  const llmP = useCodex ? api.codexLookup(word, context)
-    : useOpenAI ? api.llmLookup(word, context, state.llm) : null;
+
+  // 后台预翻译缓存命中 → 直接用缓存，秒出（不走实时请求）
+  const cachedAI = bgTranslate.cache.get(word.toLowerCase());
+  let llmP;
+  if (cachedAI) {
+    llmP = Promise.resolve({ ok: true, data: cachedAI });
+  } else {
+    llmP = useCodex ? api.codexLookup(word, context)
+      : useOpenAI ? api.llmLookup(word, context, state.llm) : null;
+  }
 
   // 离线秒回，先渲染主内容
   if (currentWord !== word) return;
@@ -1000,12 +1083,17 @@ function updateProviderUI(provider) {
   });
   const desc = $('#ai-enable-desc');
   if (desc) desc.textContent = isCodex ? '使用本机 Codex CLI，无需 API Key' : '需要 OpenAI 兼容接口的 API Key';
+  // 仅 Codex 模式显示 Codex 检测状态，避免 OpenAI 模式下误导（否则一直显示"释义将由 Codex 提供"）
+  const cs = $('#codex-status');
+  if (cs) cs.classList.toggle('hidden', !isCodex);
   if (isCodex) refreshCodexStatus();
 }
 
 async function refreshCodexStatus() {
   const el = $('#codex-status');
   if (!el) return;
+  // 非 Codex 模式不显示检测状态（OpenAI/GLM 模式下用不到，且会误导）
+  if (state.llm.provider !== 'codex') { el.classList.add('hidden'); return; }
   try {
     const st = await api.codexStatus();
     state.codexAvailable = !!st.available;
